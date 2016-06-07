@@ -52,7 +52,7 @@ func bestPrice(nodes []Node) (Node, error) {
 			bestNodePrice.Price = f
 		}
 	}
-	
+
 	if bestNodePrice == nil {
 		bestNodePrice = &NodePrice{nodes[0], 0}
 	}

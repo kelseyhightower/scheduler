@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,7 +32,7 @@ func getUnscheduledPod() (Pod, error) {
 	if err != nil {
 		return unscheduledPod, err
 	}
-	
+
 	for _, pod := range podList.Items {
 		if pod.Metadata.Annotations["scheduler.alpha.kubernetes.io/name"] == schedulerName {
 			unscheduledPod = pod
@@ -58,7 +57,7 @@ func getRunningPods() (*PodList, error) {
 }
 
 type ResourceUsage struct {
-	CPU float64
+	CPU int
 }
 
 func fit(pod Pod) ([]Node, error) {
@@ -86,14 +85,14 @@ func fit(pod Pod) ([]Node, error) {
 					return nil, err
 				}
 				ru := resourceUsage[p.Spec.NodeName]
-				ru.CPU += (float64(cores) / 1000)
+				ru.CPU += cores
 			}
 		}
 	}
 
 	var nodes []Node
 
-	var spaceRequired float64
+	var spaceRequired int
 	for _, c := range pod.Spec.Containers {
 		if strings.HasSuffix(c.Resources.Requests["cpu"], "m") {
 			milliCores := strings.TrimSuffix(c.Resources.Requests["cpu"], "m")
@@ -101,31 +100,22 @@ func fit(pod Pod) ([]Node, error) {
 			if err != nil {
 				return nil, err
 			}
-			spaceRequired += (float64(cores) / 1000)
+			spaceRequired += cores
 		}
 	}
 
 	for _, node := range nodeList.Items {
 		fmt.Println(node.Metadata.Name)
 		cpu := node.Status.Allocatable["cpu"]
-		cpuInt, err := strconv.Atoi(cpu)
+		cpuFloat, err := strconv.ParseFloat(cpu, 32)
 		if err != nil {
 			return nil, err
 		}
 
-		freeSpace := round((float64(cpuInt) - resourceUsage[node.Metadata.Name].CPU), 2)
+		freeSpace := (int(cpuFloat * 1000) - resourceUsage[node.Metadata.Name].CPU)
 		if freeSpace > spaceRequired {
 			nodes = append(nodes, node)
 		}
 	}
 	return nodes, nil
-}
-
-func round(input float64, places int) (newVal float64) {
-	var round float64
-	pow := math.Pow(10, float64(places))
-	digit := pow * input
-	round = math.Ceil(digit)
-	newVal = round / pow
-	return
 }
