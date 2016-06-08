@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -21,23 +23,27 @@ func getNodes() (*NodeList, error) {
 	return &nodeList, nil
 }
 
-func getUnscheduledPod() (Pod, error) {
-	var unscheduledPod Pod
+func getUnscheduledPod() (*Pod, error) {
+	var unscheduledPod *Pod
+
 	var podList PodList
 	resp, err := http.Get("http://127.0.0.1:8001/api/v1/pods?fieldSelector=spec.nodeName=")
 	if err != nil {
-		return unscheduledPod, err
+		return nil, err
 	}
 	err = json.NewDecoder(resp.Body).Decode(&podList)
 	if err != nil {
-		return unscheduledPod, err
+		return nil, err
 	}
 
 	for _, pod := range podList.Items {
 		if pod.Metadata.Annotations["scheduler.alpha.kubernetes.io/name"] == schedulerName {
-			unscheduledPod = pod
+			unscheduledPod = &pod
 			break
 		}
+	}
+	if unscheduledPod == nil {
+		return nil, nil
 	}
 
 	return unscheduledPod, nil
@@ -60,7 +66,7 @@ type ResourceUsage struct {
 	CPU int
 }
 
-func fit(pod Pod) ([]Node, error) {
+func fit(pod *Pod) ([]Node, error) {
 	nodeList, err := getNodes()
 	if err != nil {
 		return nil, err
@@ -105,17 +111,46 @@ func fit(pod Pod) ([]Node, error) {
 	}
 
 	for _, node := range nodeList.Items {
-		fmt.Println(node.Metadata.Name)
 		cpu := node.Status.Allocatable["cpu"]
 		cpuFloat, err := strconv.ParseFloat(cpu, 32)
 		if err != nil {
 			return nil, err
 		}
 
-		freeSpace := (int(cpuFloat * 1000) - resourceUsage[node.Metadata.Name].CPU)
+		freeSpace := (int(cpuFloat*1000) - resourceUsage[node.Metadata.Name].CPU)
 		if freeSpace > spaceRequired {
 			nodes = append(nodes, node)
 		}
 	}
 	return nodes, nil
+}
+
+func bind(pod *Pod, node Node) error {
+	binding := Binding{
+		ApiVersion: "v1",
+		Kind:       "Binding",
+		Metadata:   Metadata{Name: pod.Metadata.Name},
+		Target: Target{
+			ApiVersion: "v1",
+			Kind:       "Node",
+			Name:       node.Metadata.Name,
+		},
+	}
+
+	b := make([]byte, 0)
+	body := bytes.NewBuffer(b)
+	err := json.NewEncoder(body).Encode(binding)
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("/api/v1/namespaces/default/pods/%s/binding", pod.Metadata.Name)
+	resp, err := http.Post("http://127.0.0.1:8001"+path, "application/json", body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != 201 {
+		return errors.New("Binding: Unexpected HTTP status code" + resp.Status)
+	}
+	return nil
 }

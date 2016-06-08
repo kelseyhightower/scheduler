@@ -30,10 +30,10 @@ type ResourceRequirements struct {
 type ResourceList map[string]string
 
 type Binding struct {
-	ApiVersion string            `json:"apiVersion"`
-	Kind       string            `json:"kind"`
-	Target     Target            `json:"target"`
-	Metadata   map[string]string `json:"metadata"`
+	ApiVersion string   `json:"apiVersion"`
+	Kind       string   `json:"kind"`
+	Target     Target   `json:"target"`
+	Metadata   Metadata `json:"metadata"`
 }
 
 type Target struct {
