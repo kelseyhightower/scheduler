@@ -16,15 +16,46 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 )
 
+var (
+	apiHost            = "http://127.0.0.1:8001"
+	eventsEndpoint     = "/api/v1/namespaces/default/events"
+	nodesEndpoint      = "/api/v1/nodes"
+	unboundPodEndpoint = "/api/v1/pods?watch=true&fieldSelector=spec.nodeName="
+)
+
+func createEvent(event Event) error {
+	var b []byte
+	body := bytes.NewBuffer(b)
+	err := json.NewEncoder(body).Encode(event)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(apiHost+eventsEndpoint, "application/json", body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != 201 {
+		data, _ := ioutil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+		log.Println(string(data))
+		return errors.New("Event: Unexpected HTTP status code" + resp.Status)
+	}
+	return nil
+
+}
+
 func getNodes() (*NodeList, error) {
 	var nodeList NodeList
-	resp, err := http.Get("http://127.0.0.1:8001/api/v1/nodes")
+	resp, err := http.Get(apiHost + nodesEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +72,7 @@ func monitorUnscheduledPods() (<-chan Pod, <-chan error) {
 
 	go func() {
 		for {
-			resp, err := http.Get("http://127.0.0.1:8001/api/v1/pods?watch=true&fieldSelector=spec.nodeName=")
+			resp, err := http.Get(apiHost + unboundPodEndpoint)
 			if err != nil {
 				errc <- err
 				time.Sleep(5 * time.Second)
@@ -56,7 +87,7 @@ func monitorUnscheduledPods() (<-chan Pod, <-chan error) {
 
 			decoder := json.NewDecoder(resp.Body)
 			for {
-				var event PodEvent
+				var event PodWatchEvent
 				err = decoder.Decode(&event)
 				if err != nil {
 					errc <- err
@@ -77,7 +108,7 @@ func getUnscheduledPod() (*Pod, error) {
 	var unscheduledPod *Pod
 
 	var podList PodList
-	resp, err := http.Get("http://127.0.0.1:8001/api/v1/pods?fieldSelector=spec.nodeName=")
+	resp, err := http.Get(apiHost + unboundPodEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +218,7 @@ func bind(pod Pod, node Node) error {
 		},
 	}
 
-	b := make([]byte, 0)
+	var b []byte
 	body := bytes.NewBuffer(b)
 	err := json.NewEncoder(body).Encode(binding)
 	if err != nil {

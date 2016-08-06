@@ -14,6 +14,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 )
 
 const schedulerName = "hightower"
@@ -37,8 +38,30 @@ func main() {
 				log.Println(err)
 				continue
 			}
-			fmt.Printf("Assigned to: %s\n", node.Metadata.Name)
 			err = bind(pod, node)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			timestamp := time.Now().UTC().Format(time.RFC3339)
+			event := Event{
+				Count:          1,
+				Message:        fmt.Sprintf("Successfully assigned %s to %s", pod.Metadata.Name, node.Metadata.Name),
+				Reason:         "Scheduled",
+				LastTimestamp:  timestamp,
+				FirstTimestamp: timestamp,
+				Type:           "Normal",
+				Source:         EventSource{Component: "hightower-scheduler"},
+				InvolvedObject: ObjectReference{
+					Kind:      "Pod",
+					Name:      pod.Metadata.Name,
+					Namespace: "default",
+				},
+			}
+			event.Metadata.GenerateName = pod.Metadata.Name + "-"
+
+			err = createEvent(event)
 			if err != nil {
 				log.Println(err)
 				continue

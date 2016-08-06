@@ -11,6 +11,37 @@
 
 package main
 
+// Event is a report of an event somewhere in the cluster.
+type Event struct {
+	ApiVersion     string          `json:"apiVersion,omitempty"`
+	Count          int64           `json:"count,omitempty"`
+	FirstTimestamp string          `json:"firstTimestamp"`
+	LastTimestamp  string          `json:"lastTimestamp"`
+	InvolvedObject ObjectReference `json:"involvedObject"`
+	Kind           string          `json:"kind,omitempty"`
+	Message        string          `json:"message,omitempty"`
+	Metadata       Metadata        `json:"metadata"`
+	Reason         string          `json:"reason,omitempty"`
+	Source         EventSource     `json:"source,omitempty"`
+	Type           string          `json:"type,omitempty"`
+}
+
+// EventSource contains information for an event.
+type EventSource struct {
+	Component string `json:"component,omitempty"`
+	Host      string `json:"host,omitempty"`
+}
+
+// ObjectReference contains enough information to let you inspect or modify
+// the referred object.
+type ObjectReference struct {
+	ApiVersion string `json:"apiVersion,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+}
+
+// PodList is a list of Pods.
 type PodList struct {
 	ApiVersion string       `json:"apiVersion"`
 	Kind       string       `json:"kind"`
@@ -18,12 +49,13 @@ type PodList struct {
 	Items      []Pod        `json:"items"`
 }
 
-type PodEvent struct {
+type PodWatchEvent struct {
 	Type   string `json:"type"`
 	Object Pod    `json:"object"`
 }
 
 type Pod struct {
+	Kind     string   `json:"kind,omitempty"`
 	Metadata Metadata `json:"metadata"`
 	Spec     PodSpec  `json:"spec"`
 }
@@ -80,6 +112,7 @@ type ListMetadata struct {
 
 type Metadata struct {
 	Name            string            `json:"name"`
+	GenerateName    string            `json:"generateName"`
 	ResourceVersion string            `json:"resourceVersion"`
 	Labels          map[string]string `json:"labels"`
 	Annotations     map[string]string `json:"annotations"`
