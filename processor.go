@@ -13,32 +13,38 @@ package main
 
 import (
 	"log"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 )
 
-const schedulerName = "hightower"
+func schedulePods(done chan struct{}, wg *sync.WaitGroup) {
+	pods, errc := monitorUnscheduledPods()
 
-func main() {
-	log.Println("Starting custom scheduler...")
-
-	doneChan := make(chan struct{})
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	schedulePods(doneChan, &wg)
-
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-	for {
-		select {
-		case <-signalChan:
-			log.Printf("Shutdown signal received, exiting...")
-			close(doneChan)
-			wg.Wait()
-			os.Exit(0)
+	go func() {
+		for {
+			select {
+			case err := <-errc:
+				log.Println(err)
+			case pod := <-pods:
+				nodes, err := fit(pod)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				node, err := bestPrice(nodes)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				err = bind(pod, node)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+			case <-done:
+				wg.Done()
+				log.Println("Stopped scheduler.")
+				return
+			}
 		}
-	}
+	}()
 }

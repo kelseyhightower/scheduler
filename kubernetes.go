@@ -226,12 +226,30 @@ func bind(pod Pod, node Node) error {
 	}
 
 	path := fmt.Sprintf("/api/v1/namespaces/default/pods/%s/binding/", pod.Metadata.Name)
-	resp, err := http.Post("http://127.0.0.1:8001"+path, "application/json", body)
+	resp, err := http.Post(apiHost+path, "application/json", body)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode != 201 {
 		return errors.New("Binding: Unexpected HTTP status code" + resp.Status)
 	}
-	return nil
+
+	// Emit a Kubernetes event that the Pod was scheduled successfully.
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	event := Event{
+		Count:          1,
+		Message:        fmt.Sprintf("Successfully assigned %s to %s", pod.Metadata.Name, node.Metadata.Name),
+		Metadata:       Metadata{GenerateName: pod.Metadata.Name + "-"},
+		Reason:         "Scheduled",
+		LastTimestamp:  timestamp,
+		FirstTimestamp: timestamp,
+		Type:           "Normal",
+		Source:         EventSource{Component: "hightower-scheduler"},
+		InvolvedObject: ObjectReference{
+			Kind:      "Pod",
+			Name:      pod.Metadata.Name,
+			Namespace: "default",
+		},
+	}
+	return createEvent(event)
 }
