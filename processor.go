@@ -14,9 +14,31 @@ package main
 import (
 	"log"
 	"sync"
+	"time"
 )
 
-func schedulePods(done chan struct{}, wg *sync.WaitGroup) {
+var processorLock = &sync.Mutex{}
+
+func reconcilePods(interval int, done chan struct{}, wg *sync.WaitGroup) {
+	go func() {
+		for {
+			select {
+			case <-time.After(time.Duration(interval) * time.Second):
+				log.Println("Reconciling pods")
+				err := schedulePods()
+				if err != nil {
+					log.Println(err)
+				}
+			case <-done:
+				wg.Done()
+				log.Println("Stopped reconciliation loop.")
+				return
+			}
+		}
+	}()
+}
+
+func watchUnscheduledPods(done chan struct{}, wg *sync.WaitGroup) {
 	pods, errc := monitorUnscheduledPods()
 
 	go func() {
@@ -25,21 +47,12 @@ func schedulePods(done chan struct{}, wg *sync.WaitGroup) {
 			case err := <-errc:
 				log.Println(err)
 			case pod := <-pods:
-				nodes, err := fit(pod)
+				processorLock.Lock()
+				err := schedulePod(&pod)
 				if err != nil {
 					log.Println(err)
-					continue
 				}
-				node, err := bestPrice(nodes)
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-				err = bind(pod, node)
-				if err != nil {
-					log.Println(err)
-					continue
-				}
+				processorLock.Unlock()
 			case <-done:
 				wg.Done()
 				log.Println("Stopped scheduler.")
@@ -47,4 +60,38 @@ func schedulePods(done chan struct{}, wg *sync.WaitGroup) {
 			}
 		}
 	}()
+}
+
+func schedulePod(pod *Pod) error {
+	nodes, err := fit(pod)
+	if err != nil {
+		return err
+	}
+	node, err := bestPrice(nodes)
+	if err != nil {
+		return err
+	}
+	err = bind(pod, node)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func schedulePods() error {
+	processorLock.Lock()
+	defer processorLock.Unlock()
+	pods, err := getUnscheduledPods()
+	if err != nil {
+		return err
+	}
+
+	for _, pod := range pods {
+		err := schedulePod(pod)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+
+	return nil
 }

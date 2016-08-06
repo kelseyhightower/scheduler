@@ -28,7 +28,8 @@ var (
 	apiHost            = "http://127.0.0.1:8001"
 	eventsEndpoint     = "/api/v1/namespaces/default/events"
 	nodesEndpoint      = "/api/v1/nodes"
-	unboundPodEndpoint = "/api/v1/pods?watch=true&fieldSelector=spec.nodeName="
+	watchPodEndpoint   = "/api/v1/pods?watch=true&fieldSelector=spec.nodeName="
+	podsEndpoint       = "/api/v1/pods?fieldSelector=spec.nodeName="
 )
 
 func createEvent(event Event) error {
@@ -72,7 +73,7 @@ func monitorUnscheduledPods() (<-chan Pod, <-chan error) {
 
 	go func() {
 		for {
-			resp, err := http.Get(apiHost + unboundPodEndpoint)
+			resp, err := http.Get(apiHost + watchPodEndpoint)
 			if err != nil {
 				errc <- err
 				time.Sleep(5 * time.Second)
@@ -104,30 +105,25 @@ func monitorUnscheduledPods() (<-chan Pod, <-chan error) {
 	return pods, errc
 }
 
-func getUnscheduledPod() (*Pod, error) {
-	var unscheduledPod *Pod
+func getUnscheduledPods() ([]*Pod, error) {
+	ups := make([]*Pod, 0)
 
 	var podList PodList
-	resp, err := http.Get(apiHost + unboundPodEndpoint)
+	resp, err := http.Get(apiHost + podsEndpoint)
 	if err != nil {
-		return nil, err
+		return ups, err
 	}
 	err = json.NewDecoder(resp.Body).Decode(&podList)
 	if err != nil {
-		return nil, err
+		return ups, err
 	}
 
 	for _, pod := range podList.Items {
 		if pod.Metadata.Annotations["scheduler.alpha.kubernetes.io/name"] == schedulerName {
-			unscheduledPod = &pod
-			break
+			ups = append(ups, &pod)
 		}
 	}
-	if unscheduledPod == nil {
-		return nil, nil
-	}
-
-	return unscheduledPod, nil
+	return ups, nil
 }
 
 func getRunningPods() (*PodList, error) {
@@ -147,7 +143,7 @@ type ResourceUsage struct {
 	CPU int
 }
 
-func fit(pod Pod) ([]Node, error) {
+func fit(pod *Pod) ([]Node, error) {
 	nodeList, err := getNodes()
 	if err != nil {
 		return nil, err
@@ -178,6 +174,7 @@ func fit(pod Pod) ([]Node, error) {
 	}
 
 	var nodes []Node
+	fitFailures := make([]string, 0)
 
 	var spaceRequired int
 	for _, c := range pod.Spec.Containers {
@@ -199,14 +196,41 @@ func fit(pod Pod) ([]Node, error) {
 		}
 
 		freeSpace := (int(cpuFloat*1000) - resourceUsage[node.Metadata.Name].CPU)
-		if freeSpace > spaceRequired {
-			nodes = append(nodes, node)
+		if freeSpace < spaceRequired {
+			m := fmt.Sprintf("fit failure on node (%s): Insufficient CPU", node.Metadata.Name)
+			fitFailures = append(fitFailures, m)
+			continue
 		}
+		nodes = append(nodes, node)
 	}
+
+	if len(nodes) == 0 {
+		// Emit a Kubernetes event that the Pod was scheduled successfully.
+		timestamp := time.Now().UTC().Format(time.RFC3339)
+		event := Event{
+			Count:          1,
+			Message:        fmt.Sprintf("pod (%s) failed to fit on any node\n%s", pod.Metadata.Name, strings.Join(fitFailures, "\n")),
+			Metadata:       Metadata{GenerateName: pod.Metadata.Name + "-"},
+			Reason:         "FailedScheduling",
+			LastTimestamp:  timestamp,
+			FirstTimestamp: timestamp,
+			Type:           "Warning",
+			Source:         EventSource{Component: "hightower-scheduler"},
+			InvolvedObject: ObjectReference{
+				Kind:      "Pod",
+				Name:      pod.Metadata.Name,
+				Namespace: "default",
+				Uid:       pod.Metadata.Uid,
+			},
+		}
+		createEvent(event)
+		return nodes, errors.New("no fit")
+	}
+
 	return nodes, nil
 }
 
-func bind(pod Pod, node Node) error {
+func bind(pod *Pod, node Node) error {
 	binding := Binding{
 		ApiVersion: "v1",
 		Kind:       "Binding",

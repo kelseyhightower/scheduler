@@ -2,17 +2,15 @@ apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
   labels:
-    app: nginx
-  name: nginx
+    app: nginx2
+  name: nginx2
 spec:
-  replicas: 1
+  replicas: 5
   template:
     metadata:
-      annotations:
-        "scheduler.alpha.kubernetes.io/name": hightower
       labels:
-        app: nginx
-      name: nginx
+        app: nginx2
+      name: nginx2
     spec:
       containers:
         - name: nginx

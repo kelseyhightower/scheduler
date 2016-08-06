@@ -28,7 +28,10 @@ func main() {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	schedulePods(doneChan, &wg)
+	watchUnscheduledPods(doneChan, &wg)
+
+	wg.Add(1)
+	reconcilePods(30, doneChan, &wg)
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
