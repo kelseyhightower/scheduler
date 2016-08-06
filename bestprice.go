@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"strconv"
 )
 
@@ -21,7 +21,7 @@ func bestPrice(nodes []Node) (Node, error) {
 		if err != nil {
 			return Node{}, err
 		}
-		log.Printf("Price %v Node %v", f, n.Metadata.Name)
+		fmt.Printf("%s [$%.2f]\n", n.Metadata.Name, f)
 		if bestNodePrice == nil {
 			bestNodePrice = &NodePrice{n, f}
 			continue

@@ -1,36 +1,37 @@
 package main
 
 import (
+	"fmt"
 	"log"
-	"os"
 )
 
 const schedulerName = "hightower"
 
 func main() {
 	log.Println("Starting custom scheduler...")
+	pods, errc := monitorUnscheduledPods()
 
-	pod, err := getUnscheduledPod()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if pod == nil {
-		log.Println("No pods to schedule.")
-		os.Exit(0)
-	}
-
-	nodes, err := fit(pod)
-	if err != nil {
-		log.Fatal(err)
-	}
-	node, err := bestPrice(nodes)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println(node.Metadata.Name)
-	err = bind(pod, node)
-	if err != nil {
-		log.Fatal(err)
+	for {
+		select {
+		case err := <-errc:
+			log.Println(err)
+		case pod := <-pods:
+			nodes, err := fit(pod)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+			node, err := bestPrice(nodes)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+			fmt.Printf("Assigned to: %s\n", node.Metadata.Name)
+			err = bind(pod, node)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+		}
 	}
 }

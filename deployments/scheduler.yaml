@@ -1,0 +1,22 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: scheduler
+  name: scheduler
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: scheduler
+      name: scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: kelseyhightower/scheduler:0.1.0
+          imagePullPolicy: Always
+        - name: kubelet
+          image: kelseyhightower/kubectl:1.2.3
+          args:
+            - "proxy"

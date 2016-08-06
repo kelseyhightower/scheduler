@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func getNodes() (*NodeList, error) {
@@ -21,6 +22,44 @@ func getNodes() (*NodeList, error) {
 		return nil, err
 	}
 	return &nodeList, nil
+}
+
+func monitorUnscheduledPods() (<-chan Pod, <-chan error) {
+	pods := make(chan Pod)
+	errc := make(chan error, 1)
+
+	go func() {
+		for {
+			resp, err := http.Get("http://127.0.0.1:8001/api/v1/pods?watch=true&fieldSelector=spec.nodeName=")
+			if err != nil {
+				errc <- err
+				time.Sleep(5 * time.Second)
+				continue
+			}
+
+			if resp.StatusCode != 200 {
+				errc <- errors.New("Invalid status code: " + resp.Status)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+
+			decoder := json.NewDecoder(resp.Body)
+			for {
+				var event PodEvent
+				err = decoder.Decode(&event)
+				if err != nil {
+					errc <- err
+					break
+				}
+
+				if event.Type == "ADDED" {
+					pods <- event.Object
+				}
+			}
+		}
+	}()
+
+	return pods, errc
 }
 
 func getUnscheduledPod() (*Pod, error) {
@@ -66,7 +105,7 @@ type ResourceUsage struct {
 	CPU int
 }
 
-func fit(pod *Pod) ([]Node, error) {
+func fit(pod Pod) ([]Node, error) {
 	nodeList, err := getNodes()
 	if err != nil {
 		return nil, err
@@ -125,7 +164,7 @@ func fit(pod *Pod) ([]Node, error) {
 	return nodes, nil
 }
 
-func bind(pod *Pod, node Node) error {
+func bind(pod Pod, node Node) error {
 	binding := Binding{
 		ApiVersion: "v1",
 		Kind:       "Binding",
@@ -144,7 +183,7 @@ func bind(pod *Pod, node Node) error {
 		return err
 	}
 
-	path := fmt.Sprintf("/api/v1/namespaces/default/pods/%s/binding", pod.Metadata.Name)
+	path := fmt.Sprintf("/api/v1/namespaces/default/pods/%s/binding/", pod.Metadata.Name)
 	resp, err := http.Post("http://127.0.0.1:8001"+path, "application/json", body)
 	if err != nil {
 		return err

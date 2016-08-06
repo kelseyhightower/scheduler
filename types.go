@@ -7,6 +7,11 @@ type PodList struct {
 	Items      []Pod        `json:"items"`
 }
 
+type PodEvent struct {
+	Type   string `json:"type"`
+	Object Pod    `json:"object"`
+}
+
 type Pod struct {
 	Metadata Metadata `json:"metadata"`
 	Spec     PodSpec  `json:"spec"`
