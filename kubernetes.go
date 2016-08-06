@@ -249,6 +249,7 @@ func bind(pod Pod, node Node) error {
 			Kind:      "Pod",
 			Name:      pod.Metadata.Name,
 			Namespace: "default",
+			Uid:       pod.Metadata.Uid,
 		},
 	}
 	return createEvent(event)

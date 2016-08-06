@@ -39,6 +39,7 @@ type ObjectReference struct {
 	Kind       string `json:"kind,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Namespace  string `json:"namespace,omitempty"`
+	Uid        string `json:"uid"`
 }
 
 // PodList is a list of Pods.
@@ -116,4 +117,5 @@ type Metadata struct {
 	ResourceVersion string            `json:"resourceVersion"`
 	Labels          map[string]string `json:"labels"`
 	Annotations     map[string]string `json:"annotations"`
+	Uid             string            `json:"uid"`
 }
