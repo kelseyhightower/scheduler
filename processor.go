@@ -14,6 +14,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -21,12 +22,11 @@ import (
 
 var processorLock = &sync.Mutex{}
 
-func reconcilePods(interval int, done chan struct{}, wg *sync.WaitGroup) {
+func reconcileUnscheduledPods(interval int, done chan struct{}, wg *sync.WaitGroup) {
 	go func() {
 		for {
 			select {
 			case <-time.After(time.Duration(interval) * time.Second):
-				log.Println("Reconciling pods")
 				err := schedulePods()
 				if err != nil {
 					log.Println(err)
@@ -40,8 +40,8 @@ func reconcilePods(interval int, done chan struct{}, wg *sync.WaitGroup) {
 	}()
 }
 
-func watchUnscheduledPods(done chan struct{}, wg *sync.WaitGroup) {
-	pods, errc := monitorUnscheduledPods()
+func monitorUnscheduledPods(done chan struct{}, wg *sync.WaitGroup) {
+	pods, errc := watchUnscheduledPods()
 
 	go func() {
 		for {
@@ -69,6 +69,9 @@ func schedulePod(pod *Pod) error {
 	if err != nil {
 		return err
 	}
+	if len(nodes) == 0 {
+		return fmt.Errorf("Unable to schedule pod (%s) failed to fit on any node", pod.Metadata.Name)
+	}
 	node, err := bestPrice(nodes)
 	if err != nil {
 		return err
@@ -87,13 +90,11 @@ func schedulePods() error {
 	if err != nil {
 		return err
 	}
-
 	for _, pod := range pods {
 		err := schedulePod(pod)
 		if err != nil {
 			log.Println(err)
 		}
 	}
-
 	return nil
 }

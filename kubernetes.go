@@ -19,22 +19,23 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 )
 
 var (
-	apiHost            = "http://127.0.0.1:8001"
-	eventsEndpoint     = "/api/v1/namespaces/default/events"
-	nodesEndpoint      = "/api/v1/nodes"
-	watchPodEndpoint   = "/api/v1/pods?watch=true&fieldSelector=spec.nodeName="
-	podsEndpoint       = "/api/v1/pods?fieldSelector=spec.nodeName="
+	apiHost           = "127.0.0.1:8001"
+	bindingsEndpoint  = "/api/v1/namespaces/default/pods/%s/binding/"
+	eventsEndpoint    = "/api/v1/namespaces/default/events"
+	nodesEndpoint     = "/api/v1/nodes"
+	podsEndpoint      = "/api/v1/pods"
+	watchPodsEndpoint = "/api/v1/watch/pods"
 )
 
-func createEvent(event Event) error {
+func postEvent(event Event) error {
 	var b []byte
 	body := bytes.NewBuffer(b)
 	err := json.NewEncoder(body).Encode(event)
@@ -42,40 +43,78 @@ func createEvent(event Event) error {
 		return err
 	}
 
-	resp, err := http.Post(apiHost+eventsEndpoint, "application/json", body)
+	request := &http.Request{
+		Body:          ioutil.NopCloser(body),
+		ContentLength: int64(body.Len()),
+		Header:        make(http.Header),
+		Method:        http.MethodPost,
+		URL: &url.URL{
+			Host:   apiHost,
+			Path:   eventsEndpoint,
+			Scheme: "http",
+		},
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode != 201 {
-		data, _ := ioutil.ReadAll(resp.Body)
-		defer resp.Body.Close()
-		log.Println(string(data))
 		return errors.New("Event: Unexpected HTTP status code" + resp.Status)
 	}
 	return nil
-
 }
 
 func getNodes() (*NodeList, error) {
 	var nodeList NodeList
-	resp, err := http.Get(apiHost + nodesEndpoint)
+
+	request := &http.Request{
+		Header: make(http.Header),
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Host:   apiHost,
+			Path:   nodesEndpoint,
+			Scheme: "http",
+		},
+	}
+	request.Header.Set("Accept", "application/json, */*")
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, err
 	}
+
 	err = json.NewDecoder(resp.Body).Decode(&nodeList)
 	if err != nil {
 		return nil, err
 	}
+
 	return &nodeList, nil
 }
 
-func monitorUnscheduledPods() (<-chan Pod, <-chan error) {
+func watchUnscheduledPods() (<-chan Pod, <-chan error) {
 	pods := make(chan Pod)
 	errc := make(chan error, 1)
 
+	v := url.Values{}
+	v.Set("fieldSelector", "spec.nodeName=")
+
+	request := &http.Request{
+		Header: make(http.Header),
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Host:     apiHost,
+			Path:     watchPodsEndpoint,
+			RawQuery: v.Encode(),
+			Scheme:   "http",
+		},
+	}
+	request.Header.Set("Accept", "application/json, */*")
+
 	go func() {
 		for {
-			resp, err := http.Get(apiHost + watchPodEndpoint)
+			resp, err := http.DefaultClient.Do(request)
 			if err != nil {
 				errc <- err
 				time.Sleep(5 * time.Second)
@@ -108,29 +147,61 @@ func monitorUnscheduledPods() (<-chan Pod, <-chan error) {
 }
 
 func getUnscheduledPods() ([]*Pod, error) {
-	ups := make([]*Pod, 0)
-
 	var podList PodList
-	resp, err := http.Get(apiHost + podsEndpoint)
+	unscheduledPods := make([]*Pod, 0)
+
+	v := url.Values{}
+	v.Set("fieldSelector", "spec.nodeName=")
+
+	request := &http.Request{
+		Header: make(http.Header),
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Host:     apiHost,
+			Path:     podsEndpoint,
+			RawQuery: v.Encode(),
+			Scheme:   "http",
+		},
+	}
+	request.Header.Set("Accept", "application/json, */*")
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return ups, err
+		return unscheduledPods, err
 	}
 	err = json.NewDecoder(resp.Body).Decode(&podList)
 	if err != nil {
-		return ups, err
+		return unscheduledPods, err
 	}
 
 	for _, pod := range podList.Items {
 		if pod.Metadata.Annotations["scheduler.alpha.kubernetes.io/name"] == schedulerName {
-			ups = append(ups, &pod)
+			unscheduledPods = append(unscheduledPods, &pod)
 		}
 	}
-	return ups, nil
+
+	return unscheduledPods, nil
 }
 
 func getRunningPods() (*PodList, error) {
 	var podList PodList
-	resp, err := http.Get("http://127.0.0.1:8001/api/v1/pods?fieldSelector=status.phase=Running")
+
+	v := url.Values{}
+	v.Set("fieldSelector", "status.phase=Running")
+
+	request := &http.Request{
+		Header: make(http.Header),
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Host:     apiHost,
+			Path:     podsEndpoint,
+			RawQuery: v.Encode(),
+			Scheme:   "http",
+		},
+	}
+	request.Header.Set("Accept", "application/json, */*")
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -225,8 +296,8 @@ func fit(pod *Pod) ([]Node, error) {
 				Uid:       pod.Metadata.Uid,
 			},
 		}
-		createEvent(event)
-		return nodes, errors.New("no fit")
+
+		postEvent(event)
 	}
 
 	return nodes, nil
@@ -251,8 +322,20 @@ func bind(pod *Pod, node Node) error {
 		return err
 	}
 
-	path := fmt.Sprintf("/api/v1/namespaces/default/pods/%s/binding/", pod.Metadata.Name)
-	resp, err := http.Post(apiHost+path, "application/json", body)
+	request := &http.Request{
+		Body:          ioutil.NopCloser(body),
+		ContentLength: int64(body.Len()),
+		Header:        make(http.Header),
+		Method:        http.MethodPost,
+		URL: &url.URL{
+			Host:   apiHost,
+			Path:   fmt.Sprintf(bindingsEndpoint, pod.Metadata.Name),
+			Scheme: "http",
+		},
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return err
 	}
@@ -278,5 +361,5 @@ func bind(pod *Pod, node Node) error {
 			Uid:       pod.Metadata.Uid,
 		},
 	}
-	return createEvent(event)
+	return postEvent(event)
 }
