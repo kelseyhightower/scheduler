@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -183,11 +184,12 @@ func getUnscheduledPods() ([]*Pod, error) {
 	return unscheduledPods, nil
 }
 
-func getRunningPods() (*PodList, error) {
+func getPods() (*PodList, error) {
 	var podList PodList
 
 	v := url.Values{}
-	v.Set("fieldSelector", "status.phase=Running")
+	v.Add("fieldSelector", "status.phase=Running")
+	v.Add("fieldSelector", "status.phase=Pending")
 
 	request := &http.Request{
 		Header: make(http.Header),
@@ -222,7 +224,7 @@ func fit(pod *Pod) ([]Node, error) {
 		return nil, err
 	}
 
-	podList, err := getRunningPods()
+	podList, err := getPods()
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +235,9 @@ func fit(pod *Pod) ([]Node, error) {
 	}
 
 	for _, p := range podList.Items {
+		if p.Spec.NodeName == "" {
+			continue
+		}
 		for _, c := range p.Spec.Containers {
 			if strings.HasSuffix(c.Resources.Requests["cpu"], "m") {
 				milliCores := strings.TrimSuffix(c.Resources.Requests["cpu"], "m")
@@ -282,7 +287,7 @@ func fit(pod *Pod) ([]Node, error) {
 		timestamp := time.Now().UTC().Format(time.RFC3339)
 		event := Event{
 			Count:          1,
-			Message:        fmt.Sprintf("pod (%s) failed to fit on any node\n%s", pod.Metadata.Name, strings.Join(fitFailures, "\n")),
+			Message:        fmt.Sprintf("pod (%s) failed to fit in any node\n%s", pod.Metadata.Name, strings.Join(fitFailures, "\n")),
 			Metadata:       Metadata{GenerateName: pod.Metadata.Name + "-"},
 			Reason:         "FailedScheduling",
 			LastTimestamp:  timestamp,
@@ -344,10 +349,11 @@ func bind(pod *Pod, node Node) error {
 	}
 
 	// Emit a Kubernetes event that the Pod was scheduled successfully.
+	message := fmt.Sprintf("Successfully assigned %s to %s", pod.Metadata.Name, node.Metadata.Name)
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	event := Event{
 		Count:          1,
-		Message:        fmt.Sprintf("Successfully assigned %s to %s", pod.Metadata.Name, node.Metadata.Name),
+		Message:        message,
 		Metadata:       Metadata{GenerateName: pod.Metadata.Name + "-"},
 		Reason:         "Scheduled",
 		LastTimestamp:  timestamp,
@@ -361,5 +367,6 @@ func bind(pod *Pod, node Node) error {
 			Uid:       pod.Metadata.Uid,
 		},
 	}
+	log.Println(message)
 	return postEvent(event)
 }

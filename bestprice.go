@@ -13,10 +13,7 @@
 
 package main
 
-import (
-	"fmt"
-	"strconv"
-)
+import "strconv"
 
 func bestPrice(nodes []Node) (Node, error) {
 	type NodePrice struct {
@@ -34,7 +31,6 @@ func bestPrice(nodes []Node) (Node, error) {
 		if err != nil {
 			return Node{}, err
 		}
-		fmt.Printf("%s [$%.2f]\n", n.Metadata.Name, f)
 		if bestNodePrice == nil {
 			bestNodePrice = &NodePrice{n, f}
 			continue

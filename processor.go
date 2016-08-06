@@ -23,45 +23,42 @@ import (
 var processorLock = &sync.Mutex{}
 
 func reconcileUnscheduledPods(interval int, done chan struct{}, wg *sync.WaitGroup) {
-	go func() {
-		for {
-			select {
-			case <-time.After(time.Duration(interval) * time.Second):
-				err := schedulePods()
-				if err != nil {
-					log.Println(err)
-				}
-			case <-done:
-				wg.Done()
-				log.Println("Stopped reconciliation loop.")
-				return
+	for {
+		select {
+		case <-time.After(time.Duration(interval) * time.Second):
+			err := schedulePods()
+			if err != nil {
+				log.Println(err)
 			}
+		case <-done:
+			wg.Done()
+			log.Println("Stopped reconciliation loop.")
+			return
 		}
-	}()
+	}
 }
 
 func monitorUnscheduledPods(done chan struct{}, wg *sync.WaitGroup) {
 	pods, errc := watchUnscheduledPods()
 
-	go func() {
-		for {
-			select {
-			case err := <-errc:
+	for {
+		select {
+		case err := <-errc:
+			log.Println(err)
+		case pod := <-pods:
+			processorLock.Lock()
+			time.Sleep(2 * time.Second)
+			err := schedulePod(&pod)
+			if err != nil {
 				log.Println(err)
-			case pod := <-pods:
-				processorLock.Lock()
-				err := schedulePod(&pod)
-				if err != nil {
-					log.Println(err)
-				}
-				processorLock.Unlock()
-			case <-done:
-				wg.Done()
-				log.Println("Stopped scheduler.")
-				return
 			}
+			processorLock.Unlock()
+		case <-done:
+			wg.Done()
+			log.Println("Stopped scheduler.")
+			return
 		}
-	}()
+	}
 }
 
 func schedulePod(pod *Pod) error {
@@ -70,7 +67,7 @@ func schedulePod(pod *Pod) error {
 		return err
 	}
 	if len(nodes) == 0 {
-		return fmt.Errorf("Unable to schedule pod (%s) failed to fit on any node", pod.Metadata.Name)
+		return fmt.Errorf("Unable to schedule pod (%s) failed to fit in any node", pod.Metadata.Name)
 	}
 	node, err := bestPrice(nodes)
 	if err != nil {
