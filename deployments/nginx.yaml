@@ -19,5 +19,5 @@ spec:
           image: "nginx:1.11"
           resources:
             requests:
-              cpu: "500m"
+              cpu: "200m"
               memory: "64M"
