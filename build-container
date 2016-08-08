@@ -1,0 +1,4 @@
+GOOS=linux bash build
+docker build -t kelseyhightower/scheduler:0.2.0 .
+docker push kelseyhightower/scheduler:0.2.0
+rm scheduler

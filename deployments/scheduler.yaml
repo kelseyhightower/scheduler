@@ -14,8 +14,7 @@ spec:
     spec:
       containers:
         - name: scheduler
-          image: kelseyhightower/scheduler:0.1.0
-          imagePullPolicy: Always
+          image: kelseyhightower/scheduler:0.2.0
         - name: kubelet
           image: kelseyhightower/kubectl:1.2.3
           args:
