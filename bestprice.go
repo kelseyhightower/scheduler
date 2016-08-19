@@ -13,7 +13,9 @@
 
 package main
 
-import "strconv"
+import (
+	"strconv"
+)
 
 func bestPrice(nodes []Node) (Node, error) {
 	type NodePrice struct {

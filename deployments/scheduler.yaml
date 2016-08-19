@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: scheduler
-          image: kelseyhightower/scheduler:0.2.0
+          image: kelseyhightower/scheduler:0.4.0
         - name: kubectl
           image: kelseyhightower/kubectl:1.3.4
           args:
