@@ -8,12 +8,11 @@ spec:
   replicas: 1
   template:
     metadata:
-      annotations:
-        "scheduler.alpha.kubernetes.io/name": hightower
       labels:
         app: nginx
       name: nginx
     spec:
+      schedulerName: hightower
       containers:
         - name: nginx
           image: "nginx:1.11.1-alpine"
