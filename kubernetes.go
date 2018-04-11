@@ -267,13 +267,24 @@ func fit(pod *Pod) ([]Node, error) {
 	}
 
 	for _, node := range nodeList.Items {
-		cpu := node.Status.Allocatable["cpu"]
-		cpuFloat, err := strconv.ParseFloat(cpu, 32)
-		if err != nil {
-			return nil, err
+		var allocatableCores int
+		var err error
+		if strings.HasSuffix(node.Status.Allocatable["cpu"], "m") {
+			milliCores := strings.TrimSuffix(node.Status.Allocatable["cpu"], "m")
+			allocatableCores, err = strconv.Atoi(milliCores)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			cpu := node.Status.Allocatable["cpu"]
+			cpuFloat, err := strconv.ParseFloat(cpu, 32)
+			if err != nil {
+				return nil, err
+			}
+			allocatableCores = int(cpuFloat * 1000)
 		}
 
-		freeSpace := (int(cpuFloat*1000) - resourceUsage[node.Metadata.Name].CPU)
+		freeSpace := (allocatableCores - resourceUsage[node.Metadata.Name].CPU)
 		if freeSpace < spaceRequired {
 			m := fmt.Sprintf("fit failure on node (%s): Insufficient CPU", node.Metadata.Name)
 			fitFailures = append(fitFailures, m)
