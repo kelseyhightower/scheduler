@@ -44,12 +44,17 @@ NAME                     READY     STATUS    RESTARTS   AGE
 nginx-1431970305-mwghf   0/1       Pending   0          27s
 ```
 
+### Build the Scheduler
+```
+sh ./build
+```
+
 ### Run the Scheduler
 
 List the nodes and note the price of each node.
 
 ```
-annotator -l
+go run annotator/main.go -l
 ```
 ```
 gke-k0-default-pool-728d327f-00lq 0.80
